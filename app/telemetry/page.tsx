@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAdminData } from "@/lib/api/use-admin-data";
+import { ChartContainer, ChartTooltip, ChartTooltipContent, CartesianGrid, Line, LineChart, ResponsiveContainer, XAxis, YAxis } from "@/components/ui/chart";
 import { telemetryActivitySchema, telemetryDistributionsSchema, telemetryOverviewSchema } from "@/lib/api/schemas";
 
 const ranges = ["7d", "30d", "90d", "365d"] as const;
@@ -55,92 +56,8 @@ function shortDay(day: string) {
 }
 
 function Trend({ points }: { points: TrendPoint[] }) {
-  const data = useMemo(() => {
-    const maximum = Math.max(...points.flatMap((point) => [point.activeInstallations, point.newInstallations]), 0);
-    const step = chartStep(maximum);
-    const maximumY = Math.max(step, Math.ceil(maximum / step) * step);
-    const tickCount = Math.round(maximumY / step);
-    const plotWidth = chart.width - chart.left - chart.right;
-    const plotHeight = chart.height - chart.top - chart.bottom;
-    const x = (index: number) => chart.left + (points.length < 2 ? plotWidth / 2 : (index / (points.length - 1)) * plotWidth);
-    const y = (value: number) => chart.top + plotHeight - (value / maximumY) * plotHeight;
-    const coordinates = points.map((point, index) => ({ point, x: x(index), activeY: y(point.activeInstallations), newY: y(point.newInstallations) }));
-    const line = (key: "activeY" | "newY") => coordinates.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x.toFixed(1)} ${point[key].toFixed(1)}`).join(" ");
-    const desiredXTickCount = Math.min(5, points.length);
-    const xTickIndices = desiredXTickCount < 2
-      ? points.length === 1 ? [0] : []
-      : [...new Set(Array.from({ length: desiredXTickCount }, (_, index) => Math.round((index * (points.length - 1)) / (desiredXTickCount - 1))))];
-    return {
-      activeLine: line("activeY"),
-      coordinates,
-      newLine: line("newY"),
-      plotHeight,
-      plotWidth,
-      xTickIndices,
-      yTicks: Array.from({ length: tickCount + 1 }, (_, index) => index * step),
-      y,
-    };
-  }, [points]);
-
-  return (
-    <Card>
-      <CardHeader><CardTitle>每日使用者趋势</CardTitle></CardHeader>
-      <CardContent>
-        {points.length === 0 ? (
-          <AdminEmpty label="当前范围没有趋势数据。" />
-        ) : (
-          <>
-            <p className="mb-3 text-xs text-muted-foreground">按 UTC 自然日统计；将鼠标悬停在数据点上可查看当天数值。</p>
-            <div className="overflow-x-auto pb-2">
-              <svg className="h-auto min-w-[620px] w-full" viewBox={`0 0 ${chart.width} ${chart.height}`} role="img" aria-label="每日活跃安装与新增安装趋势图">
-                <title>每日活跃安装与新增安装趋势</title>
-                <desc>蓝线表示活跃安装，绿线表示新增安装。</desc>
-                {data.yTicks.map((value) => {
-                  const tickY = data.y(value);
-                  return (
-                    <g key={value}>
-                      <line x1={chart.left} x2={chart.left + data.plotWidth} y1={tickY} y2={tickY} className="stroke-border" strokeWidth="1" />
-                      <text x={chart.left - 8} y={tickY} textAnchor="end" dominantBaseline="middle" className="fill-muted-foreground text-[10px]">{format(value)}</text>
-                    </g>
-                  );
-                })}
-                <line x1={chart.left} x2={chart.left} y1={chart.top} y2={chart.top + data.plotHeight} className="stroke-muted-foreground/50" strokeWidth="1" />
-                <line x1={chart.left} x2={chart.left + data.plotWidth} y1={chart.top + data.plotHeight} y2={chart.top + data.plotHeight} className="stroke-muted-foreground/50" strokeWidth="1" />
-                {data.xTickIndices.map((index) => {
-                  const point = data.coordinates[index];
-                  return (
-                    <g key={point.point.day}>
-                      <line x1={point.x} x2={point.x} y1={chart.top + data.plotHeight} y2={chart.top + data.plotHeight + 5} className="stroke-muted-foreground/50" strokeWidth="1" />
-                      <text x={point.x} y={chart.height - 16} textAnchor="middle" className="fill-muted-foreground text-[10px]">{shortDay(point.point.day)}</text>
-                    </g>
-                  );
-                })}
-                <path d={data.activeLine} fill="none" className="stroke-sky-500" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" vectorEffect="non-scaling-stroke" />
-                <path d={data.newLine} fill="none" className="stroke-emerald-500" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" vectorEffect="non-scaling-stroke" />
-                {data.coordinates.map(({ point, x, activeY, newY }) => (
-                  <g key={point.day}>
-                    <title>{`${point.day}（UTC）：活跃安装 ${format(point.activeInstallations)}，新增安装 ${format(point.newInstallations)}`}</title>
-                    <circle cx={x} cy={activeY} r="8" fill="transparent" />
-                    <circle cx={x} cy={newY} r="8" fill="transparent" />
-                    <circle cx={x} cy={activeY} r="3" className="fill-sky-500 stroke-background" strokeWidth="2" />
-                    <circle cx={x} cy={newY} r="3" className="fill-emerald-500 stroke-background" strokeWidth="2" />
-                  </g>
-                ))}
-              </svg>
-            </div>
-          </>
-        )}
-        <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground" aria-label="图表图例">
-          {[["活跃安装", "bg-sky-500"], ["新增安装", "bg-emerald-500"]].map(([label, color]) => (
-            <span key={label} className="flex items-center gap-1.5">
-              <span className={`h-0.5 w-4 rounded-full ${color}`} />
-              {label}
-            </span>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
-  );
+  const settled = points.filter((point) => point.day < new Date().toISOString().slice(0, 10));
+  return <Card><CardHeader><CardTitle>每日使用者趋势</CardTitle></CardHeader><CardContent>{settled.length === 0 ? <AdminEmpty label="当前范围没有已结算趋势数据。" /> : <><p className="mb-3 text-xs text-muted-foreground">按 UTC 自然日统计；本日数据将在次日结算后显示，悬浮查看详细数据。</p><ChartContainer><ResponsiveContainer width="100%" height="100%"><LineChart data={settled.map((point) => ({...point, day: shortDay(point.day)}))}><CartesianGrid vertical={false} /><XAxis dataKey="day" /><YAxis /><ChartTooltip content={<ChartTooltipContent />} /><Line type="monotone" dataKey="activeInstallations" name="活跃安装" stroke="var(--chart-1)" strokeWidth={2} dot={false} /><Line type="monotone" dataKey="newInstallations" name="新增安装" stroke="var(--chart-2)" strokeWidth={2} dot={false} /></LineChart></ResponsiveContainer></ChartContainer></>}</CardContent></Card>;
 }
 
 export default function Telemetry() {
