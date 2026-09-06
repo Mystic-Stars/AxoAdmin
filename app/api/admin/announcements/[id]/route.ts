@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { db, admin, body, failure, AnnouncementError } from "@/lib/announcements/server";
 import { announcementInput, type Announcement } from "@/lib/announcements/schema";
+import { recordAudit } from "@/lib/audit";
 
 type Context = { params: Promise<{ id: string }> };
 async function path(context: Context) {
@@ -24,7 +25,9 @@ export async function PATCH(request: Request, context: Context) {
       patch.starts_at ??= new Date().toISOString();
     }
     const response = await db(location, { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify({ ...patch, updated_at: new Date().toISOString() }) });
-    return Response.json((await response.json())[0]);
+    const updated = (await response.json())[0];
+    await recordAudit(request, "update", "announcement", updated.id, { title: updated.title });
+    return Response.json(updated);
   } catch (error) { return failure(error); }
 }
 export async function DELETE(request: Request, context: Context) {
@@ -32,6 +35,8 @@ export async function DELETE(request: Request, context: Context) {
     await admin(request);
     const response = await db(await path(context), { method: "DELETE", headers: { Prefer: "return=representation" } });
     if (!(await response.json()).length) throw new AnnouncementError("公告不存在", 404);
+    await recordAudit(request, "delete", "announcement", (await context.params).id);
     return new Response(null, { status: 204 });
   } catch (error) { return failure(error); }
 }
+

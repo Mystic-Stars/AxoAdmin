@@ -1,5 +1,6 @@
 import { db, admin, body, failure } from "@/lib/announcements/server";
 import { announcementInput } from "@/lib/announcements/schema";
+import { recordAudit } from "@/lib/audit";
 
 export async function GET(request: Request) {
   try {
@@ -16,6 +17,9 @@ export async function POST(request: Request) {
       method: "POST", headers: { Prefer: "return=representation" },
       body: JSON.stringify({ ...input, starts_at: input.starts_at ?? new Date().toISOString(), status: "draft", created_by: session.identity.email ?? session.identity.name }),
     });
-    return Response.json((await response.json())[0], { status: 201 });
+    const created = (await response.json())[0];
+    await recordAudit(request, "create", "announcement", created.id, { title: created.title });
+    return Response.json(created, { status: 201 });
   } catch (error) { return failure(error); }
 }
+
